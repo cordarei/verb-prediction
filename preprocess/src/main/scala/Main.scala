@@ -143,7 +143,31 @@ object Main {
   }
 
   def verbChains(doc: Document) = {
-    val entities = doc.entities.map{_.map{_.head}}
+    val entities = doc.entities.map{_.mentions.map{_.head}}
+    val verbs = doc.verbs.toSeq
+    val entityVerbs = entities.map{
+      _.flatMap{headWordIdx => doc.sentence(headWordIdx).dependencies.filter{_.daughter == headWordIdx}}
+        .map{_.head}
+        .map(doc(_))
+        .filter{verbs.contains}
+        .toSet
+    }.filter{!_.isEmpty}
+
+    val findIntersect = (sets: Seq[Set[Token]]) => {
+      sets.combinations(2).filter{case List(s1,s2) => !s1.intersect(s2).isEmpty}
+    }
+
+    var chains = entityVerbs
+    var ints = findIntersect(chains)
+    while(!ints.isEmpty) {
+      val tomerge = ints.flatten
+      val nomerge = chains.filter{!tomerge.contains(_)}
+
+      chains = nomerge ++ ints.map{case List(s1, s2) => s1.union(s2)}
+      ints = findIntersect(chains)
+    }
+
+    chains.map{_.toSeq.sortBy(tok => (tok.index.sentence, tok.index.token))}
   }
 
   def makeVerbChainDataset(train: Dataset, test: Dataset, trimVocab: Int) {
@@ -151,6 +175,29 @@ object Main {
     IO.withWriter("vocab") {writeVocab(_, verbVocab)}
 
     val writeDoc = (pw: PrintWriter, doc: Document) => {
+      val chains = verbChains(doc)
+      pw.println(s"document ${chains.length}")
+      for (ch <- chains) {
+        pw.println(ch.map{t => w2id(t.lemma, verbVocab)}.mkString("|"))
+      }
+    }
+
+    IO.withWriter("train") {
+      w => {
+        val pw = IO.wrapWriter(w)
+        for (doc <- train.documents) {
+          writeDoc(pw, doc)
+        }
+      }
+    }
+
+    IO.withWriter("test") {
+      w => {
+        val pw = IO.wrapWriter(w)
+        for (doc <- test.documents) {
+          writeDoc(pw, doc)
+        }
+      }
     }
   }
 
