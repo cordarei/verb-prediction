@@ -143,6 +143,7 @@ object Main {
   }
 
   def verbChains(doc: Document) = {
+    System.err.println(s"verbChains ${doc.id}")
     val entities = doc.entities.map{_.mentions.map{_.head}}
     val verbs = doc.verbs.toSeq
     val entityVerbs = entities.map{
@@ -151,23 +152,25 @@ object Main {
         .map(doc(_))
         .filter{verbs.contains}
         .toSet
-    }.filter{!_.isEmpty}
+    }.filter{!_.isEmpty}.distinct
+    System.err.println(s"  ${entityVerbs.length} entities")
 
-    val findIntersect = (sets: Seq[Set[Token]]) => {
-      sets.combinations(2).filter{case List(s1,s2) => !s1.intersect(s2).isEmpty}
+    var sets = entityVerbs
+    var chains = new collection.mutable.ListBuffer[Set[Token]]()
+    while (!sets.isEmpty) {
+      var ent = sets.head
+      sets = sets.tail
+      var ints = sets.filter{!ent.intersect(_).isEmpty}
+      while(!ints.isEmpty) {
+        ent = ints.foldLeft(ent)(_.union(_))
+        sets = sets.filter{!ints.contains(_)}
+        ints = sets.filter{!ent.intersect(_).isEmpty}
+      }
+      chains += ent
     }
+    System.err.println(s"  ${chains.length} entities")
 
-    var chains = entityVerbs
-    var ints = findIntersect(chains)
-    while(!ints.isEmpty) {
-      val tomerge = ints.flatten
-      val nomerge = chains.filter{!tomerge.contains(_)}
-
-      chains = nomerge ++ ints.map{case List(s1, s2) => s1.union(s2)}
-      ints = findIntersect(chains)
-    }
-
-    chains.map{_.toSeq.sortBy(tok => (tok.index.sentence, tok.index.token))}
+    chains.map{_.toSeq.sortBy(tok => (tok.index.sentence, tok.index.token))}.toList
   }
 
   def makeVerbChainDataset(train: Dataset, test: Dataset, trimVocab: Int) {
