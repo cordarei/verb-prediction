@@ -143,19 +143,19 @@ object Main {
   }
 
   def verbChains(doc: Document) = {
-    System.err.println(s"verbChains ${doc.id}")
     val entities = doc.entities.map{_.mentions.map{_.head}}
     val verbs = doc.verbs.toSeq
-    val entityVerbs = entities.map{
+    val entityVerbSets = entities.map{
       _.flatMap{headWordIdx => doc.sentence(headWordIdx).dependencies.filter{_.daughter == headWordIdx}}
         .map{_.head}
         .map(doc(_))
         .filter{verbs.contains}
         .toSet
     }.filter{!_.isEmpty}.distinct
-    System.err.println(s"  ${entityVerbs.length} entities")
+    val entityVerbs = entityVerbSets.flatten
+    val singleVerbs = verbs.filter{!entityVerbs.contains(_)}
 
-    var sets = entityVerbs
+    var sets = entityVerbSets
     var chains = new collection.mutable.ListBuffer[Set[Token]]()
     while (!sets.isEmpty) {
       var ent = sets.head
@@ -168,9 +168,8 @@ object Main {
       }
       chains += ent
     }
-    System.err.println(s"  ${chains.length} entities")
 
-    chains.map{_.toSeq.sortBy(tok => (tok.index.sentence, tok.index.token))}.toList
+    chains.map{_.toSeq.sortBy(tok => (tok.index.sentence, tok.index.token))}.toList ++ singleVerbs.map{List(_)}
   }
 
   def makeVerbChainDataset(train: Dataset, test: Dataset, trimVocab: Int) {
