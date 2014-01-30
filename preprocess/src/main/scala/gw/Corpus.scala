@@ -44,7 +44,7 @@ class Dataset(
             d.getType
           )
         }.toList
-        val rootidx = if (s.getColCcprocDeps.length > 0) { s.getColCcprocDeps.filter{_.getType == "root"}(0).getDepIdx } else { 0 }
+        val rootidx = s.getColCcprocDeps.find{_.getType == "root"}.map{_.getDepIdx}.getOrElse(0)
         val root = tokens(rootidx).index
 
         Sentence(tokens, dependencies, root)
