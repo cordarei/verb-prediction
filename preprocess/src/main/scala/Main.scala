@@ -12,6 +12,8 @@ object Opts {
 
     val corpus = opt[String]("corpus", descr="Corpus directory", required=true)
 
+    val summarize = toggle("summarize", default=Some(false))
+
     val trimVocab = opt[Int]("trimVocab", descr="Trim words with <trimVocab frequency", default=Some(2))
 
     val verbTypes = Set("root", "recursive", "fused", "all")
@@ -32,6 +34,11 @@ object Main {
     val train = makeCorpus(Path(options.corpus(), "train"), options.verbs())
     val test = makeCorpus(Path(options.corpus(), "test"), options.verbs())
 
+    if (options.summarize()) {
+      summarizeCorpus(train, test, options.verbs())
+      return
+    }
+
     options.model() match {
       case "lda" => makeLdaDataset(train, test, options.trimVocab())
       case "verbonly" => makeVerbTopicDataset(train, test, options.trimVocab())
@@ -50,6 +57,23 @@ object Main {
       })
     )
   )
+
+  case class DocSummary(file: String, docid: GigawordId, sents: Int, tokens: Int, verbs: Int)
+
+  def summarizeCorpus(train: Dataset, test: Dataset, verbs: String) {
+    import Using._
+
+    val d2file = (d:Document) => s"${d.id.section}_eng_${d.id.year}${d.id.month}.xml.gz"
+    val d2sum = (d:Document) => DocSummary(d2file(d), d.id, d.sentences.length, d.tokens.length, d.verbs.length)
+    val sum2s = (s:DocSummary) => s"${s.file}\t${s.docid}\t${s.sents}\t${s.tokens}\t${s.verbs}"
+    val header = "XML_File_Name\tDocument_Id\tNumber_of_Sentences\tNumber_of_Tokens\tNumber_of_Verbs"
+
+    val trainsum = train.documents map d2sum
+    val testsum = test.documents map d2sum
+
+    using(Path(s"summary.${verbs}.train").writer) { w => w.println(header); trainsum.map{sum2s}.foreach{w.println(_)} }
+    using(Path(s"summary.${verbs}.test").writer) { w => w.println(header); testsum.map{sum2s}.foreach{w.println(_)} }
+  }
 
   def makeVocab(words: Iterator[String], trimVocab: Int) = {
     val counts = new collection.mutable.HashMap[String, Int]()
