@@ -34,15 +34,11 @@ object Vocab {
 
 
 trait DocumentWriter {
-  val indexBuffer = new collection.mutable.ListBuffer[List[String]]()
 
-  def writeDoc(pw: PrintWriter, doc: Document)
+  def writeDoc(pw: PrintWriter, doc: Document, iw: PrintWriter)
 
-  def writeIndex(pw: PrintWriter) {
-    for (parts <- indexBuffer) {
-      pw.println(parts mkString "\t")
-    }
-    indexBuffer.clear()
+  def writeIndex(pw: PrintWriter, doc: Document, tok: Token, vocab: Vocab, index: String) {
+    pw.println((instanceIndexParts(doc, tok, vocab) :+ index) mkString "\t")
   }
 
   def instanceIndexParts(doc: Document, tok: Token, vocab: Vocab) = {
@@ -52,18 +48,18 @@ trait DocumentWriter {
 
 class LdaWriter(val vocab: Vocab) extends DocumentWriter {
   var d = 1
-  def writeDoc(pw: PrintWriter, doc: Document) {
+  def writeDoc(pw: PrintWriter, doc: Document, iw: PrintWriter) {
     val tokens = doc.tokens.toSeq
     val verbs = doc.verbs.toSeq
     pw.println(s"document ${tokens.length}")
     var i = 1
     for (tok <- tokens) {
-      val id = vocab(tok.lemma) //w2id(tok.lemma, vocab)
+      val id = vocab(tok.lemma)
       val isverb = verbs.contains(tok)
       pw.println(s"$id $isverb")
 
       if (isverb) {
-        indexBuffer += (instanceIndexParts(doc, tok, vocab) :+ s"$d $i")
+        writeIndex(iw, doc, tok, vocab, s"$d $i")
       }
       i = i + 1
     }
@@ -74,13 +70,13 @@ class LdaWriter(val vocab: Vocab) extends DocumentWriter {
 
 class VerbOnlyWriter(val vocab: Vocab) extends DocumentWriter {
   var d = 1
-  def writeDoc(pw: PrintWriter, doc: Document) {
+  def writeDoc(pw: PrintWriter, doc: Document, iw: PrintWriter) {
     val verbs = doc.verbs.toSeq
     pw.println(s"document ${verbs.length}")
     var i = 1
     for (verb <- verbs) {
       pw.println(vocab(verb.lemma).toString)
-      indexBuffer += (instanceIndexParts(doc, verb, vocab) :+ s"$d $i")
+      writeIndex(iw, doc, verb, vocab, s"$d $i")
       i = i + 1
     }
 
@@ -90,7 +86,7 @@ class VerbOnlyWriter(val vocab: Vocab) extends DocumentWriter {
 
 class VerbArgWriter(val verbVocab: Vocab, val argVocab: Vocab) extends DocumentWriter {
   var d = 1
-  def writeDoc(pw: PrintWriter, doc: Document) {
+  def writeDoc(pw: PrintWriter, doc: Document, iw: PrintWriter) {
     val verbs = doc.verbs.toSeq
     val argLists = verbs.map{VerbArgs(doc, _)}
     val numArgs = argLists.map{_.length}.sum
@@ -105,7 +101,7 @@ class VerbArgWriter(val verbVocab: Vocab, val argVocab: Vocab) extends DocumentW
       val id = verbVocab(vb.lemma)
       val tokNum = senOffs(vb.index.sentence - 1) + vb.index.token
       pw.println(s"$id $tokNum")
-      indexBuffer += (instanceIndexParts(doc, vb, verbVocab) :+ s"$d $i")
+      writeIndex(iw, doc, vb, verbVocab, s"$d $i")
       i = i + 1
     }
 
@@ -131,7 +127,7 @@ object VerbArgs {
 
 class VerbChainWriter(val vocab: Vocab) extends DocumentWriter {
   var d = 1
-  def writeDoc(pw: PrintWriter, doc: Document) {
+  def writeDoc(pw: PrintWriter, doc: Document, iw: PrintWriter) {
     val chains = verbChains(doc)
     val numVerbs = chains.map{_.length}.sum
     pw.println(s"document ${chains.length} $numVerbs")
@@ -146,7 +142,7 @@ class VerbChainWriter(val vocab: Vocab) extends DocumentWriter {
         val varNum = i + 1 // +1 to match Julia index
         // <word> <token index (for sorting purposes during L2R approx.)> <index of latent variable this depends on>
         pw.println(s"$id $tokNum $varNum")
-        indexBuffer += (instanceIndexParts(doc, t, vocab) :+ s"$d $j")
+        writeIndex(iw, doc, t, vocab, s"$d $j")
         j = j + 1
       }
     }
@@ -257,85 +253,23 @@ object Main {
   }
 
 
-  // type VocabT = Map[String, (Int, Int)]
-  // def makeVocab(words: Iterator[String], trimVocab: Int) = {
-  //   val counts = new collection.mutable.HashMap[String, Int]()
-  //   for (w <- words) {
-  //     counts += w -> (counts.getOrElse(w, 0) + 1)
-  //   }
-  //   val unkCount = counts.view.filter{case (w, n) => n < trimVocab}.map{_._2}.sum
-
-  //   val vocab = counts
-  //     .toSeq
-  //     .sortBy(_._2)(Ordering[Int].reverse)
-  //     .filter{case (w, n) => n >= trimVocab}
-  //     .zipWithIndex
-  //     .map{case ((w, n), i) => (w, (i+1, n))}
-  //     .toMap
-
-  //   vocab + ("UNK" -> (vocab.size + 1, unkCount))
-  // }
-
   def writeVocab(writer: Writer, vocab: Vocab) {
     val pw = IO.wrapWriter(writer)
-    // for ((w, (i, n)) <- vocab.toSeq.sortBy(_._2._1)) {
     for ((w, i, n) <- vocab.toSeq) {
       pw.println(s"$w\t$i\t$n")
     }
   }
 
-  // def w2id(w: String, vocab: VocabT) = vocab.getOrElse(w, vocab("UNK"))._1
-
   def filterDocs(docs: Iterator[Document]) = docs.filter{!_.verbs.isEmpty}
-
-  // def instanceIndexParts(doc: Document, tok: Token, vocab: VocabT) = {
-  //   val word: Token => String = t => if (vocab.contains(t.lemma)) t.lemma else "UNK"
-
-  //   List(doc.id.toString, tok.index.sentence.toString, tok.index.token.toString, word(tok), tok.pos)
-  // }
-
-  // val indexBuffer = new collection.mutable.ListBuffer[List[String]]()
-  // def writeIndex(writer: Writer) {
-  //   val pw = IO.wrapWriter(writer)
-  //   for (parts <- indexBuffer) {
-  //     pw.println(parts mkString "\t")
-  //   }
-  // }
 
   def writeData(name: String, data: Dataset, docWriter: DocumentWriter) {
     using(Path(name).writer, Path(s"index.$name").writer) {
       (dw, iw) => {
-        filterDocs(data.documents).foreach{docWriter.writeDoc(dw, _)}
-        docWriter.writeIndex(iw)
+        filterDocs(data.documents).foreach{docWriter.writeDoc(dw, _, iw)}
       }
     }
   }
 
-  // def writeDatasets(train: Dataset, test: Dataset, writeDoc: (PrintWriter, Document) => Unit, resetbetween: () => Unit) {
-  //   indexBuffer.clear()
-  //   IO.withWriter("train") {
-  //     w => {
-  //       val pw = IO.wrapWriter(w)
-  //       for (doc <- train.documents) {
-  //         writeDoc(pw, doc)
-  //       }
-  //     }
-  //   }
-  //   IO.withWriter("index.train") {writeIndex(_)}
-
-  //   resetbetween()
-
-  //   indexBuffer.clear()
-  //   IO.withWriter("test") {
-  //     w => {
-  //       val pw = IO.wrapWriter(w)
-  //       for (doc <- test.documents) {
-  //         writeDoc(pw, doc)
-  //       }
-  //     }
-  //   }
-  //   IO.withWriter("index.test") {writeIndex(_)}
-  // }
 
   def makeLdaDataset(train: Dataset, test: Dataset, trimVocab: Int) {
     val vocab = Vocab(train.documents.flatMap{_.tokens}.map{_.lemma}, trimVocab)
@@ -343,51 +277,8 @@ object Main {
 
     writeData("train", train, new LdaWriter(vocab))
     writeData("test", test, new LdaWriter(vocab))
-
-    // var d = 1
-
-    // val writeDoc = (pw: PrintWriter, doc: Document) => {
-    //   val tokens = doc.tokens.toSeq
-    //   val verbs = doc.verbs.toSeq
-    //   pw.println(s"document ${tokens.length}")
-    //   var i = 1
-    //   for (tok <- tokens) {
-    //     val id = w2id(tok.lemma, vocab)
-    //     val isverb = verbs.contains(tok)
-    //     pw.println(s"$id $isverb")
-
-    //     if (isverb) {
-    //       indexBuffer += (instanceIndexParts(doc, tok, vocab) :+ s"$d $i")
-    //     }
-    //     i = i + 1
-    //   }
-
-    //   d = d + 1
-    // }
-
-    // writeDatasets(train, test, writeDoc, () => {d = 1})
-    // indexBuffer.clear()
-    // IO.withWriter("train") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- train.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
-    // IO.withWriter("index.train") {writeIndex(_)}
-
-    // indexBuffer.clear()
-    // IO.withWriter("test") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- test.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
-    // IO.withWriter("index.test") {writeIndex(_)}
   }
+
 
   def makeVerbTopicDataset(train: Dataset, test: Dataset, trimVocab: Int) {
     val vocab = Vocab(train.documents.flatMap{_.verbs}.map{_.lemma}, trimVocab)
@@ -395,39 +286,6 @@ object Main {
 
     writeData("train", train, new VerbOnlyWriter(vocab))
     writeData("test", test, new VerbOnlyWriter(vocab))
-
-    // var d = 1
-    // val writeDoc = (pw: PrintWriter, doc: Document) => {
-    //   val verbs = doc.verbs.toSeq
-    //   pw.println(s"document ${verbs.length}")
-    //   var i = 1
-    //   for (verb <- verbs) {
-    //     pw.println(w2id(verb.lemma, vocab).toString)
-    //     indexBuffer += (instanceIndexParts(doc, verb, vocab) :+ s"$d $i")
-    //     i = i + 1
-    //   }
-
-    //   d = d + 1
-    // }
-
-    // writeDatasets(train, test, writeDoc, () => {d = 1})
-    // IO.withWriter("train") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- train.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
-
-    // IO.withWriter("test") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- test.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
   }
 
 
@@ -437,49 +295,6 @@ object Main {
 
     writeData("train", train, new VerbChainWriter(verbVocab))
     writeData("test", test, new VerbChainWriter(verbVocab))
-
-    // var d = 1
-    // val writeDoc = (pw: PrintWriter, doc: Document) => {
-    //   val chains = verbChains(doc)
-    //   val numVerbs = chains.map{_.length}.sum
-    //   pw.println(s"document ${chains.length} $numVerbs")
-
-    //   // start with "1" to match Julia's one-based array indices
-    //   val senOffs = doc.sentences.scanLeft(1)(_ + _.words.length)
-    //   var j = 1
-    //   for ((ch,i) <- chains.zipWithIndex) {
-    //     for (t <- ch) {
-    //       val id = w2id(t.lemma, verbVocab)
-    //       val tokNum = senOffs(t.index.sentence - 1) + t.index.token
-    //       val varNum = i + 1 // +1 to match Julia index
-    //       // <word> <token index (for sorting purposes during L2R approx.)> <index of latent variable this depends on>
-    //       pw.println(s"$id $tokNum $varNum")
-    //       indexBuffer += (instanceIndexParts(doc, t, verbVocab) :+ s"$d $j")
-    //       j = j + 1
-    //     }
-    //   }
-
-    //   d = d + 1
-    // }
-
-    // writeDatasets(train, test, writeDoc, () => {d = 1})
-    // IO.withWriter("train") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- train.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
-
-    // IO.withWriter("test") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- test.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
   }
 
 
@@ -492,55 +307,5 @@ object Main {
 
     writeData("train", train, new VerbArgWriter(verbVocab, argVocab))
     writeData("test", test, new VerbArgWriter(verbVocab, argVocab))
-
-    // var d = 1
-    // val writeDoc = (pw: PrintWriter, doc: Document) => {
-    //   val verbs = doc.verbs.toSeq
-    //   val argLists = verbs.map{verbArgs(doc, _)}
-    //   val numArgs = argLists.map{_.length}.sum
-
-    //   pw.println(s"document ${verbs.length} $numArgs")
-
-    //   // start with "1" to match Julia's one-based array indices
-    //   val senOffs = doc.sentences.scanLeft(1)(_ + _.words.length)
-
-    //   var i = 1
-    //   for (vb <- verbs) {
-    //     val id = w2id(vb.lemma, argVocab)
-    //     val tokNum = senOffs(vb.index.sentence - 1) + vb.index.token
-    //     pw.println(s"$id $tokNum")
-    //     indexBuffer += (instanceIndexParts(doc, vb, verbVocab) :+ s"$d $i")
-    //     i = i + 1
-    //   }
-
-    //   for ((as, i) <- argLists.zipWithIndex) {
-    //     for (a <- as) {
-    //       val id = w2id(a.lemma, argVocab)
-    //       val tokNum = senOffs(a.index.sentence - 1) + a.index.token
-    //       val varNum = i + 1
-    //       pw.println(s"$id $tokNum $varNum")
-    //     }
-    //   }
-    //   d = d + 1
-    // }
-
-    // writeDatasets(train, test, writeDoc, () => {d = 1})
-    // IO.withWriter("train") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- train.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
-
-    // IO.withWriter("test") {
-    //   w => {
-    //     val pw = IO.wrapWriter(w)
-    //     for (doc <- test.documents) {
-    //       writeDoc(pw, doc)
-    //     }
-    //   }
-    // }
   }
 }
