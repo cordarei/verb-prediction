@@ -5,6 +5,9 @@ import java.io.{File, Writer, FileWriter, PrintWriter, BufferedWriter, Reader, F
 object Using {
   def using[A, B <: {def close(): Unit}] (closeable: B) (f: B => A): A =
     try { f(closeable) } finally { closeable.close() }
+
+  def using[A, B <: {def close(): Unit}] (first: B, second: B) (f: (B,B) => A): A =
+    try { f(first, second) } finally { first.close(); second.close() }
 }
 
 class Path private (private val f: File) {
