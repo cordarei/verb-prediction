@@ -118,13 +118,13 @@ end
 
 function run()
     # parameters (TODO: read from config/args)
-    K = 10
+    K = 200
     α = 0.1
     β = 0.01
     iters = 20
-    burnin = 20
+    burnin = 2
     prioriters = 5
-    R = 20
+    R = 10
 
     # vocab
     vocab = readvocab("vocab")
@@ -136,6 +136,10 @@ function run()
     # training data
     data = readtrain("train")
     D = length(data.doffs) - 1
+    doctotals = Array(Int, D)
+    for d = 1:D
+        doctotals[d] = data.doffs[d + 1] - data.doffs[d]
+    end
 
     # counts
     counts = Counts(zeros(Int, K, D), zeros(Int, K, V), zeros(Int, K))
@@ -151,15 +155,20 @@ function run()
     end
 
     #check doffs
-    for d=1:D
+    @debugonly for d=1:D
         nd = data.doffs[d+1] - data.doffs[d]
         zd = sum(counts.doctopiccounts[:,d])
-        @debugonlyif (nd <= 0) data.doffs[d-1:d+2]
-        @debugonlyif (nd != zd) (d, nd, zd)
+        if (nd <= 0) 
+            @show data.doffs[d-1:d+2]
+        end
+        if (nd != zd)
+            @show (d, nd, zd)
+        end
         @assert(sum(counts.doctopiccounts[:,d]) == (data.doffs[d+1] - data.doffs[d]))
     end
-    @debugonly loglikelihood(K, D, V, data, counts, α, β)
-    @debugonly loglikelihood2(K, D, V, data, counts, α, β)
+    # @debugonly loglikelihood(K, D, V, data, counts, α, β)
+    # @debugonly loglikelihood2(K, D, V, data, counts, α, β)
+    flush_cstdio()
 
     # do training
     for x = 1:iters
@@ -175,6 +184,12 @@ function run()
         end
 
         #TODO: optimize α prior
+        if x > burnin
+            α = weights( dirichlet_estimate!(counts.doctopiccounts, doctotals, values(α), prioriters) )
+            @debugonly values(α)
+            @debugonly sum(α)
+        end
+        flush_cstdio()
     end
 
     # save word-topic distributions
@@ -205,6 +220,8 @@ function run()
             vs = Array(Int, n_d)
 
             testlength += n_d
+            @debugonly (d, n_d)
+            flush_cstdio()
 
             for i = 1:n_d
                 line = chomp(readline(f))
@@ -258,7 +275,7 @@ function run()
     end
 end
 
-run()
+@time run()
 
 # using Base.Profile
 # Profile.init(10^8, 0.001)

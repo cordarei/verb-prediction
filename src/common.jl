@@ -17,6 +17,12 @@ macro debugonly(ex)
         :(@show $(esc(ex)))
     end
 end
+macro debugonlynoshow(ex)
+    if DEBUG
+        # :(@show $(esc(ex)))
+        ex
+    end
+end
 macro debugonlyif(cond, ex)
     if DEBUG
         quote
@@ -107,4 +113,53 @@ function dumptopics(wordtopiccounts::Matrix{Int}, vocab::Vocab, β, n)
             end
         end
     end
+end
+
+
+function dirichlet_histogram(observationcounts::Matrix{Int}, totals::Vector{Int})
+    (K, D) = size(observationcounts)
+    maxNk = maximum(observationcounts)
+    maxN = maximum(totals)
+
+    Nk = zeros(Int, maxNk, K)
+    N = zeros(Int, maxN)
+
+    for d = 1:D
+        for k = 1:K
+            if observationcounts[k,d] > 0
+                Nk[observationcounts[k,d], k] += 1
+            end
+        end
+        N[totals[d]] += 1
+    end
+
+    (Nk, N)
+end
+
+function dirichlet_estimate!(observationcounts::Matrix{Int}, totals::Vector{Int}, α::Vector{Float64}, iters::Int)
+    K = size(observationcounts, 1)
+    (Nk, N) = dirichlet_histogram(observationcounts, totals)
+
+    for i = 1:iters
+        D = 0
+        S = 0
+        α0 = sum(α)
+
+        for n = 1:length(N)
+            D += 1 / (n - 1 + α0)
+            S += N[n]*D
+        end
+
+        for k = 1:K
+            D = 0
+            Sk = 0
+            for n = 1:size(Nk,1)
+                D += 1 / (n - 1 + α[k])
+                Sk += Nk[n,k]*D
+            end
+            α[k] *= Sk/S
+        end
+    end
+
+    α
 end
