@@ -84,7 +84,7 @@ end
 function loglikelihood2(K, D, V, data::TrainingData, counts::Counts, α, β)
     l = 0.
     for d=1:D
-        l += logmultibeta(counts.doctopiccounts[:,d] + values(α))
+        l += logmultibeta(counts.doctopiccounts[:,d] + α)
         l -= logmultibeta(α)
     end
     for k=1:K
@@ -95,12 +95,13 @@ function loglikelihood2(K, D, V, data::TrainingData, counts::Counts, α, β)
 end
 
 function loglikelihood(K, D, V, data::TrainingData, counts::Counts, α, β)
+    α0 = sum(α)
     l = 0.
-    l += D * (lgamma(sum(α)) - sum(lgamma, α))
+    l += D * (lgamma(α0) - sum(lgamma, α))
     l += K * (lgamma(V * β) - V * lgamma(β))
 
     for d=1:D
-        l -= lgamma(data.doffs[d+1] - data.doffs[d] + sum(α))
+        l -= lgamma(data.doffs[d+1] - data.doffs[d] + α0)
         for k=1:K
             l += lgamma(counts.doctopiccounts[k,d] + α[k])
         end
@@ -121,17 +122,19 @@ function run()
     K = 200
     α = 0.1
     β = 0.01
-    iters = 20
-    burnin = 2
-    prioriters = 5
-    R = 10
+    iters = 2000
+    burnin = 100
+    estimationinterval = 10
+    prioriters = 200 # from comment in Mallet code
+    R = 20
 
     # vocab
     vocab = readvocab("vocab")
     @debug V = vocab.size
 
     # priors
-    α = weights(α * ones(K))
+    α = α * ones(K)
+    α0 = sum(α)
 
     # training data
     data = readtrain("train")
@@ -143,6 +146,7 @@ function run()
 
     # counts
     counts = Counts(zeros(Int, K, D), zeros(Int, K, V), zeros(Int, K))
+    hist = DirichletHistogram()
 
     # random initialization
     for d = 1:D
@@ -155,7 +159,7 @@ function run()
     end
 
     #check doffs
-    @debugonly for d=1:D
+    @debugonlynoshow for d=1:D
         nd = data.doffs[d+1] - data.doffs[d]
         zd = sum(counts.doctopiccounts[:,d])
         if (nd <= 0) 
@@ -173,7 +177,7 @@ function run()
     # do training
     for x = 1:iters
         @debugonly x
-        @debugonlyif (0 == (x - 1) % 5) loglikelihood(K, D, V, data, counts, α, β)
+        @debugonlyif (0 == x % 5) loglikelihood(K, D, V, data, counts, α, β)
 
         for d = 1:D
             ifirst = data.doffs[d]
@@ -184,10 +188,13 @@ function run()
         end
 
         #TODO: optimize α prior
-        if x > burnin
-            α = weights( dirichlet_estimate!(counts.doctopiccounts, doctotals, values(α), prioriters) )
-            @debugonly values(α)
-            @debugonly sum(α)
+        if x > burnin && 0 == x % estimationinterval
+            dirichlet_histogram!(counts.doctopiccounts, doctotals, hist)
+            dirichlet_estimate!(hist, prioriters, α)
+            α0 = sum(α)
+            @debugonly α
+            @debugonly α0
+            @debugonly maximum(α)
         end
         flush_cstdio()
     end
@@ -208,6 +215,7 @@ function run()
     totallogprob = 0
     testlength = 0
     d = 1
+    @debugonlynoshow lastshown = 1
     open("test") do f
         open("evaluation", "w") do outf
         while !eof(f)
@@ -220,7 +228,10 @@ function run()
             vs = Array(Int, n_d)
 
             testlength += n_d
-            @debugonly (d, n_d)
+
+            @debugonlynoshow if d / lastshown >= 10
+                print("$(d)...")
+            end
             flush_cstdio()
 
             for i = 1:n_d
@@ -249,11 +260,11 @@ function run()
                     #calculate p(w)
                     v = vs[i]
                     for k = 1:K
-                        prob +=
+                        @inbounds prob +=
                             ((newcounts.wordtopiccounts[k,v] + β) /
                             (newcounts.topicwordtotals[k] + β*V)) *
                             ((newcounts.doctopiccounts[k] + α[k]) /
-                            (i - 1 + sum(α)))
+                            (i - 1 + α0))
                     end
 
                     @inbounds fs[i,r] = sample_topic(K, V, v, 1, α, β, newcounts)
@@ -270,12 +281,15 @@ function run()
             d += 1
         end
         end
+
         ppl = 2^(-totallogprob / testlength)
-        println("test perplexity: $ppl")
+        println("\ntest perplexity: $ppl")
     end
 end
 
-@time run()
+run()
+
+# @time run()
 
 # using Base.Profile
 # Profile.init(10^8, 0.001)
@@ -285,8 +299,8 @@ end
 # @profile run()
 
 # open("profile", "w") do f
-#     Profile.print(f, C=true, cols=500)
+#     Profile.print(f, C=true, cols=5000)
 # end
 # open("profile_flat", "w") do f
-#     Profile.print(f, format=:flat, C=true, cols=500)
+#     Profile.print(f, format=:flat, C=true, cols=5000)
 # end

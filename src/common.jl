@@ -1,7 +1,7 @@
 using Base.Collections
 using StatsBase
 
-import Base: getindex, push!, collect, start, next, done
+import Base: getindex, setindex!, resize!, push!, collect, start, next, done
 
 # debug printing
 const DEBUG = (!haskey(ENV, "DEBUG") ? false : (ENV["DEBUG"] == "1" || ENV["DEBUG"] == "true"))
@@ -19,8 +19,7 @@ macro debugonly(ex)
 end
 macro debugonlynoshow(ex)
     if DEBUG
-        # :(@show $(esc(ex)))
-        ex
+        :($(esc(ex)))
     end
 end
 macro debugonlyif(cond, ex)
@@ -116,48 +115,83 @@ function dumptopics(wordtopiccounts::Matrix{Int}, vocab::Vocab, β, n)
 end
 
 
-function dirichlet_histogram(observationcounts::Matrix{Int}, totals::Vector{Int})
+# Estimating Dirichlet parameters
+
+type DirichletHistogram
+    Nk::Matrix{Int} # Nk x K => C_k(n)
+    N::Array{Int,1} # Nd => C(n)
+    maxNk::Int
+    maxN::Int
+    K::Int
+
+    DirichletHistogram() = new(Array(Int,0,0), Array(Int, 0), 0, 0, 0)
+end
+
+getindex(dh::DirichletHistogram, i1::Int, i2::Int) = dh.Nk[i1,i2]
+getindex(dh::DirichletHistogram, i::Int) = dh.N[i]
+
+setindex!(dh::DirichletHistogram, x::Int, i1::Int, i2::Int) = setindex!(dh.Nk, x, i1,i2)
+setindex!(dh::DirichletHistogram, x::Int, i::Int) = setindex!(dh.N, x, i)
+
+function resize!(dh::DirichletHistogram, K, maxNk, maxN)
+    if size(dh.Nk, 1) < maxNk || size(dh.Nk, 2) < K
+        dh.Nk = Array(Int, maxNk, K)
+    end
+    if length(dh.N) < maxN
+        resize!(dh.N, maxN)
+    end
+    dh.maxNk = maxNk
+    dh.maxN = maxN
+    dh.K = K
+end
+
+function dirichlet_histogram!(observationcounts::Matrix{Int}, totals::Vector{Int}, dh::DirichletHistogram)
     (K, D) = size(observationcounts)
     maxNk = maximum(observationcounts)
     maxN = maximum(totals)
-
-    Nk = zeros(Int, maxNk, K)
-    N = zeros(Int, maxN)
+    resize!(dh, K, maxNk, maxN)
+    fill!(dh.Nk, 0)
+    fill!(dh.N, 0)
 
     for d = 1:D
         for k = 1:K
-            if observationcounts[k,d] > 0
-                Nk[observationcounts[k,d], k] += 1
+            @inbounds n = observationcounts[k,d]
+            if n > 0
+                @inbounds dh[n,k] += 1
             end
         end
-        N[totals[d]] += 1
+        @inbounds dh[totals[d]] += 1
     end
 
-    (Nk, N)
+    dh
 end
 
-function dirichlet_estimate!(observationcounts::Matrix{Int}, totals::Vector{Int}, α::Vector{Float64}, iters::Int)
-    K = size(observationcounts, 1)
-    (Nk, N) = dirichlet_histogram(observationcounts, totals)
+function dirichlet_histogram(observationcounts::Matrix{Int}, totals::Vector{Int})
+    (K, D) = size(observationcounts)
+    dirichlet_histogram!(observationcounts, totals, DirichletHistogram(K, D))
+end
+
+function dirichlet_estimate!(dh::DirichletHistogram, iters::Int, α::Vector{Float64})
+    K = dh.K
 
     for i = 1:iters
         D = 0
         S = 0
         α0 = sum(α)
 
-        for n = 1:length(N)
+        for n = 1:dh.maxN
             D += 1 / (n - 1 + α0)
-            S += N[n]*D
+            @inbounds S += dh[n]*D
         end
 
         for k = 1:K
             D = 0
             Sk = 0
-            for n = 1:size(Nk,1)
-                D += 1 / (n - 1 + α[k])
-                Sk += Nk[n,k]*D
+            for n = 1:dh.maxNk
+                @inbounds D += 1 / (n - 1 + α[k])
+                @inbounds Sk += dh[n,k]*D
             end
-            α[k] *= Sk/S
+            @inbounds α[k] *= Sk/S
         end
     end
 
