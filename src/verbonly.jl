@@ -118,23 +118,21 @@ function loglikelihood(K, D, V, data::TrainingData, counts::Counts, α, β)
 end
 
 function run()
-    # parameters (TODO: read from config/args)
-    K = 200
-    α = 0.1
-    β = 0.01
-    iters = 2000
-    burnin = 100
-    estimationinterval = 10
-    prioriters = 200 # from comment in Mallet code
-    R = 20
+    # parameters
+    args = getargs()
+    K = args["K"]::Int
+    α = (args["alpha"]::Float64 / K) * ones(K)
+    α0 = sum(α)
+    β = args["beta"]::Float64
+    iters = args["iters"]::Int
+    burnin = args["burnin"]::Int
+    estimationinterval = args["priorinterval"]::Int
+    prioriters = args["prioriters"]::Int
+    R = args["particles"]::Int
 
     # vocab
     vocab = readvocab("vocab")
     @debug V = vocab.size
-
-    # priors
-    α = α * ones(K)
-    α0 = sum(α)
 
     # training data
     data = readtrain("train")
@@ -170,8 +168,7 @@ function run()
         end
         @assert(sum(counts.doctopiccounts[:,d]) == (data.doffs[d+1] - data.doffs[d]))
     end
-    # @debugonly loglikelihood(K, D, V, data, counts, α, β)
-    # @debugonly loglikelihood2(K, D, V, data, counts, α, β)
+    @debugonly loglikelihood(K, D, V, data, counts, α, β)
     flush_cstdio()
 
     # do training
@@ -187,14 +184,15 @@ function run()
             end
         end
 
-        #TODO: optimize α prior
         if x > burnin && 0 == x % estimationinterval
             dirichlet_histogram!(counts.doctopiccounts, doctotals, hist)
             dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
-            @debugonly α
+            # @debugonly α
             @debugonly α0
             @debugonly maximum(α)
+            @debugonly maximum(α) / mean(α)
+            # TODO: estimate β prior?
         end
         flush_cstdio()
     end
@@ -230,6 +228,7 @@ function run()
             testlength += n_d
 
             @debugonlynoshow if d / lastshown >= 10
+                lastshown = d
                 print("$(d)...")
             end
             flush_cstdio()

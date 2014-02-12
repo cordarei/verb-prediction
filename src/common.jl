@@ -1,5 +1,6 @@
 using Base.Collections
 using StatsBase
+using ArgParse
 
 import Base: getindex, setindex!, resize!, push!, collect, start, next, done
 
@@ -31,6 +32,44 @@ macro debugonlyif(cond, ex)
         end
     end
 end
+
+
+# Command-line Arguments
+
+function getargs()
+    s = ArgParseSettings()
+
+    @add_arg_table s begin
+        "-K"
+            arg_type = Int
+            default = 200 # from comment in Mallet code
+        "--alpha", "-a"
+            help = "The value of α0; each α_k = alpha / K"
+            arg_type = Float64
+            default = 50.
+        "--beta", "-b"
+            arg_type = Float64
+            default = 0.01
+        "--iters", "-i"
+            arg_type = Int
+            default = 2000
+        "--burnin"
+            arg_type = Int
+            default = 50
+        "--prioriters"
+            arg_type = Int
+            default = 200
+        "--priorinterval"
+            arg_type = Int
+            default = 10
+        "--particles", "-R"
+            arg_type = Int
+            default = 20
+    end
+
+    parse_args(s)
+end
+
 
 # Vocab
 # conversions between word <-> index
