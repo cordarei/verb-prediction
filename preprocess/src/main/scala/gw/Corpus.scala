@@ -13,7 +13,8 @@ object NormalizeTokens extends DocumentProcessor {
 
 class Dataset(
   val xmlFiles: Seq[String],
-  val process: Option[Document => Document] = None) {
+  val process: Option[Document => Document] = None,
+  val filter: Option[Document => Boolean] = None) {
 
   def documents : Iterator[Document] =
     xmlFiles
@@ -21,6 +22,7 @@ class Dataset(
       .flatMap{agDocumentIterator(_)}
       .map{ag2doc(_)}
       .map{d => process.map{_(d)}.getOrElse(d)}
+      .filter{d => filter.map{_(d)}.getOrElse(true)}
 
   private def ag2doc(ag: AgigaDocument): Document = {
     import scala.collection.JavaConversions._

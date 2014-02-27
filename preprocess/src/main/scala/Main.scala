@@ -208,8 +208,9 @@ object Main {
   def main(args: Array[String]) {
     val options = Opts(args)
 
-    val train = makeCorpus(Path(options.corpus(), "train"), options.verbs())
-    val test = makeCorpus(Path(options.corpus(), "test"), options.verbs())
+    val corpusDir = Path(options.corpus())
+    val train = makeCorpus(corpusDir / "train", options.verbs(), readDocList(corpusDir / "docids.train"))
+    val test = makeCorpus(corpusDir / "test", options.verbs(), readDocList(corpusDir / "docsids.test"))
 
     if (options.summarize()) {
       summarizeCorpus(train, test, options.verbs())
@@ -224,7 +225,15 @@ object Main {
     }
   }
 
-  def makeCorpus(dir: Path, verbs: String) = new Dataset(
+  def readDocList(path: Path): Seq[String] = {
+    if (path.exists) {
+      IO.lines(path).toSeq
+    } else {
+      Seq()
+    }
+  }
+
+  def makeCorpus(dir: Path, verbs: String, docIdList: Seq[String] = Seq()) = new Dataset(
     dir.files.map(_.path),
     Some(
       NormalizeTokens.andThen(verbs match {
@@ -232,6 +241,9 @@ object Main {
         case "recursive" => VerbExtractors.recursive
         case "all" => VerbExtractors.allverbs
       })
+    ),
+    Some(
+      d => !d.verbs.isEmpty && (docIdList.isEmpty || docIdList.contains(d.id.toString))
     )
   )
 
@@ -260,12 +272,10 @@ object Main {
     }
   }
 
-  def filterDocs(docs: Iterator[Document]) = docs.filter{!_.verbs.isEmpty}
-
   def writeData(name: String, data: Dataset, docWriter: DocumentWriter) {
     using(Path(name).writer, Path(s"index.$name").writer) {
       (dw, iw) => {
-        filterDocs(data.documents).foreach{docWriter.writeDoc(dw, _, iw)}
+        data.documents.foreach{docWriter.writeDoc(dw, _, iw)}
       }
     }
   }

@@ -14,9 +14,11 @@ class Path private (private val f: File) {
   type Writer = PrintWriter
   type Reader = BufferedReader
 
+  def exists = f.exists
+
   def path = f.getPath
 
-  def +(child: String): Path = Path(path, child)
+  def /(child: String): Path = Path(path, child)
 
   def files: Seq[Path] = f.listFiles.filter(_.isFile).map{new Path(_)}.toSeq
 
