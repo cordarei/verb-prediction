@@ -20,7 +20,7 @@ class VerbExtractorProcessor(val extract: Sentence => Seq[Token]) extends Docume
 
 //holds ready-made verb extractors
 object VerbExtractors {
-  def isverb(t: Token) = t.pos(0) == 'V'
+  def isverb(t: Token) = t.pos(0) == 'V' && t.lemma != "be"
 
   lazy val allverbs = new VerbExtractorProcessor(s => s.words.filter{isverb(_)})
   lazy val rootverbs = new VerbExtractorProcessor(s => {val r = s(s.root); if (isverb(r)) Seq(r) else Seq()})
