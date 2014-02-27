@@ -210,7 +210,7 @@ object Main {
 
     val corpusDir = Path(options.corpus())
     val train = makeCorpus(corpusDir / "train", options.verbs(), readDocList(corpusDir / "docids.train"))
-    val test = makeCorpus(corpusDir / "test", options.verbs(), readDocList(corpusDir / "docsids.test"))
+    val test = makeCorpus(corpusDir / "test", options.verbs(), readDocList(corpusDir / "docids.test"))
 
     if (options.summarize()) {
       summarizeCorpus(train, test, options.verbs())
