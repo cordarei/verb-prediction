@@ -186,12 +186,14 @@ function run()
     end
 
     # save word-topic distributions
+    @debug showprogress("Saving model", "...")
     if !isdir("topics")
         mkdir("topics")
     end
     cd("topics") do
         dumptopics(counts.wordtopiccounts, vocab, β, 20)
     end
+    @debug showprogress("Saving model", "... DONE.\n")
 
     # try to free up some memory
     data = nothing # we only need the counts for the evaluation
