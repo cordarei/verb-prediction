@@ -191,12 +191,21 @@ function run()
     end
 
     # save word-topic distributions
-    @debug showprogress("Saving model", "...")
+    @debug showprogress("Saving model", ".")
     if !isdir("topics")
         mkdir("topics")
     end
     cd("topics") do
         dumptopics(counts.wordtopiccounts, vocab, β, 20)
+    end
+    @debug showprogress("Saving model", "..")
+    open("model", "w") do f
+        println(f, "# Topic α Nk")
+        topictotals = sum(counts.wordtopiccounts, 2)
+        @debug assert(topictotals == sum(counts.doctopiccounts, 2))
+        for k = 1:K
+            println(f, "$k\t$(α[k])\t$(topictotals[k])")
+        end
     end
     @debug showprogress("Saving model", "... DONE.\n")
 
