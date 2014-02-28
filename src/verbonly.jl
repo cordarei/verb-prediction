@@ -207,9 +207,20 @@ function run()
     # do evaluation
     println(OUT)
     println(OUT, "# Evaluation:")
+
     totallogprob = 0.
     testlength = 0
     d = 1
+
+    # allocate local particle counts for test
+    particlecounts = [
+        Counts(
+            zeros(Int, K, 1),
+            copy(counts.wordtopiccounts),
+            copy(counts.topicwordtotals))
+        for r=1:R
+    ]
+
     open("test") do f
         while !eof(f)
             line = chomp(readline(f))
@@ -230,14 +241,6 @@ function run()
             end
 
             # do L2R approx.
-            particlecounts = [
-                Counts(
-                    zeros(Int, K, 1),
-                    copy(counts.wordtopiccounts),
-                    copy(counts.topicwordtotals))
-                for r=1:R
-            ]
-
             for i = 1:n_d
                 prob = 0.
                 v = vs[i]
@@ -270,6 +273,14 @@ function run()
             end
 
             d += 1
+
+            # reset particle counts to train counts for next document
+            for r=1:R
+                particlecounts[r].doctopiccounts[:] = 0
+                particlecounts[r].wordtopiccounts[:] = counts.wordtopiccounts
+                particlecounts[r].topicwordtotals[:] = counts.topicwordtotals
+            end
+
         end
         @debug showprogress("Testing document:", "$d DONE.\n")
 
