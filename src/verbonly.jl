@@ -102,6 +102,7 @@ end
 
 function run()
     OUT = STDOUT
+    @debug showprogress("Starting up", "... Started.\n")
     # for debugging purposes
     @debug dumpfile = open("dump", "w")
 
@@ -142,13 +143,17 @@ function run()
 
     # random initialization
     @debug showprogress("Intializing:", 0, endof(data.vs))
+    @debug curnth = 0
     for d = 1:D
         ifirst = data.doffs[d]
         ilast = data.doffs[d+1] - 1
         for i = ifirst:ilast
             @inbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts)
         end
-        @debug showprogress("Intializing:", ilast, endof(data.vs))
+        @debug if ilast > curnth * fld(endof(data.vs), 20) || ilast == endof(data.vs)
+            curnth += 1
+            showprogress("Intializing:", ilast, endof(data.vs))
+        end
     end
 
     # do training
@@ -266,7 +271,7 @@ function run()
 
             d += 1
         end
-        @debug showprogress("Testing document:", "$d DONE\n")
+        @debug showprogress("Testing document:", "$d DONE.\n")
 
         println(OUT)
         println(OUT, "# Results:")

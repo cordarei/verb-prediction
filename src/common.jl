@@ -33,7 +33,7 @@ function showprogress(msg, x, n)
     progstr = @sprintf "%s %s / %s (%.0f%%)" msg xstr nstr 100*(x/n)
     printover(STDERR, progstr)
     if x >= n
-        println(STDERR, " DONE")
+        println(STDERR, " DONE.")
     end
 end
 
