@@ -6,31 +6,40 @@ import Base: getindex, setindex!, resize!, push!, collect, start, next, done
 
 # debug printing
 const DEBUG = (!haskey(ENV, "DEBUG") ? false : (ENV["DEBUG"] == "1" || ENV["DEBUG"] == "true"))
-macro debug(ex)
+macro debugshow(ex)
     if DEBUG
         :(@show $(esc(ex)))
     else
         esc(ex)
     end
 end
-macro debugonly(ex)
-    if DEBUG
-        :(@show $(esc(ex)))
-    end
-end
-macro debugonlynoshow(ex)
+macro debug(ex)
     if DEBUG
         :($(esc(ex)))
     end
 end
-macro debugonlyif(cond, ex)
-    if DEBUG
-        quote
-            if $(esc(cond))
-                @show $(esc(ex))
-            end
-        end
+
+function printover(io::IO, s)
+    if !is(typeof(io), Base.TTY)
+        return
     end
+    print(io, "\r")
+    print(io, s)
+end
+
+function showprogress(msg, x, n)
+    nstr = dec(n)
+    xstr = lpad(dec(x), length(nstr), ' ')
+    progstr = @sprintf "%s %s / %s (%.0f%%)" msg xstr nstr 100*(x/n)
+    printover(STDERR, progstr)
+    if x >= n
+        println(STDERR, " DONE")
+    end
+end
+
+function showprogress(msg, x)
+    progstr = string(msg, " ", x)
+    printover(STDERR, progstr)
 end
 
 
@@ -68,6 +77,13 @@ function getargs()
     end
 
     parse_args(s)
+end
+
+function printargs(io::IO, args)
+    println(io, "# Parameters:")
+    for (arg, val) in args
+        println(io, "$arg = $val")
+    end
 end
 
 

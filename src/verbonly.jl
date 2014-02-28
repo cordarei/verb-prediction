@@ -1,5 +1,6 @@
 include("common.jl")
 
+
 type TrainingData
     fs::Vector{Int}
     vs::Vector{Int}
@@ -36,11 +37,10 @@ function readtrain(filename::String)
     end
     @assert(i == doffs[end])
     @assert(i == numtokens + 1)
-    @debugonly numtokens
-    @debugonly length(doffs)
 
     return TrainingData(fs, vs, doffs)
 end
+
 
 type Counts
     doctopiccounts::Matrix{Int} #KxD
@@ -77,23 +77,6 @@ function sample_topic(K, V, v, d, α, β, counts::Counts, dec_k=0)
     k
 end
 
-function logmultibeta(alpha)
-    sum(lgamma, alpha) - lgamma(sum(alpha))
-end
-
-function loglikelihood2(K, D, V, data::TrainingData, counts::Counts, α, β)
-    l = 0.
-    for d=1:D
-        l += logmultibeta(counts.doctopiccounts[:,d] + α)
-        l -= logmultibeta(α)
-    end
-    for k=1:K
-        l += logmultibeta(counts.wordtopiccounts[k,:] + β)
-        l -= logmultibeta(ones(V)*β)
-    end
-    l
-end
-
 function loglikelihood(K, D, V, data::TrainingData, counts::Counts, α, β)
     α0 = sum(α)
     l = 0.
@@ -118,6 +101,10 @@ function loglikelihood(K, D, V, data::TrainingData, counts::Counts, α, β)
 end
 
 function run()
+    OUT = STDOUT
+    # for debugging purposes
+    @debug dumpfile = open("dump", "w")
+
     # parameters
     args = getargs()
     K = args["K"]::Int
@@ -130,9 +117,14 @@ function run()
     prioriters = args["prioriters"]::Int
     R = args["particles"]::Int
 
+    printargs(OUT, args)
+    println(OUT)
+
     # vocab
     vocab = readvocab("vocab")
-    @debug V = vocab.size
+    V = vocab.size
+
+    println(OUT, "V = $V")
 
     # training data
     data = readtrain("train")
@@ -142,39 +134,27 @@ function run()
         doctotals[d] = data.doffs[d + 1] - data.doffs[d]
     end
 
+    println(OUT, "D = $D")
+
     # counts
     counts = Counts(zeros(Int, K, D), zeros(Int, K, V), zeros(Int, K))
     hist = DirichletHistogram()
 
     # random initialization
+    @debug showprogress("Intializing:", 0, endof(data.vs))
     for d = 1:D
         ifirst = data.doffs[d]
         ilast = data.doffs[d+1] - 1
         for i = ifirst:ilast
             @inbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts)
-            @debugonlyif in(i, 1:fld(endof(data.fs),10):endof(data.fs)) fld(100*i, endof(data.fs))
         end
+        @debug showprogress("Intializing:", ilast, endof(data.vs))
     end
-
-    #check doffs
-    @debugonlynoshow for d=1:D
-        nd = data.doffs[d+1] - data.doffs[d]
-        zd = sum(counts.doctopiccounts[:,d])
-        if (nd <= 0) 
-            @show data.doffs[d-1:d+2]
-        end
-        if (nd != zd)
-            @show (d, nd, zd)
-        end
-        @assert(sum(counts.doctopiccounts[:,d]) == (data.doffs[d+1] - data.doffs[d]))
-    end
-    @debugonly loglikelihood(K, D, V, data, counts, α, β)
-    flush_cstdio()
 
     # do training
     for x = 1:iters
-        @debugonly x
-        @debugonlyif (0 == x % 5) loglikelihood(K, D, V, data, counts, α, β)
+        @debug showprogress("Training:", x, iters)
+        # loglikelihood(K, D, V, data, counts, α, β)
 
         for d = 1:D
             ifirst = data.doffs[d]
@@ -188,13 +168,21 @@ function run()
             dirichlet_histogram!(counts.doctopiccounts, doctotals, hist)
             dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
-            # @debugonly α
-            @debugonly α0
-            @debugonly maximum(α)
-            @debugonly maximum(α) / mean(α)
             # TODO: estimate β prior?
         end
-        flush_cstdio()
+
+        @debug if x % 10 == 0 || x == iters
+            println(dumpfile, "# x = $x")
+            l = loglikelihood(K, D, V, data, counts, α, β)
+            println(dumpfile, "L = $l")
+            println(dumpfile, "α0 = $(α0)")
+            println(dumpfile, "α = [")
+            for a in α
+                println(dumpfile, "  $a")
+            end
+            println(dumpfile, "]")
+            println(dumpfile)
+        end
     end
 
     # save word-topic distributions
@@ -206,20 +194,20 @@ function run()
     end
 
     # try to free up some memory
-    data = nothing # we only need to counts for the evaluation
+    data = nothing # we only need the counts for the evaluation
     gc()
 
     # do evaluation
-    totallogprob = 0
+    println(OUT)
+    println(OUT, "# Evaluation:")
+    totallogprob = 0.
     testlength = 0
     d = 1
-    @debugonlynoshow lastshown = 1
     open("test") do f
-        open("evaluation", "w") do outf
         while !eof(f)
             line = chomp(readline(f))
             ss = split(line)
-            assert(ss[1] == "document")
+            @assert ss[1] == "document"
 
             n_d = int(ss[2])
             fs = Array(Int, n_d, R)
@@ -227,11 +215,7 @@ function run()
 
             testlength += n_d
 
-            @debugonlynoshow if d / lastshown >= 10
-                lastshown = d
-                print("$(d)...")
-            end
-            flush_cstdio()
+            @debug showprogress("Testing document:", d)
 
             for i = 1:n_d
                 line = chomp(readline(f))
@@ -248,7 +232,9 @@ function run()
             ]
 
             for i = 1:n_d
-                prob = 0
+                prob = 0.
+                v = vs[i]
+
                 for r = 1:R
                     newcounts = particlecounts[r]
                     #resample
@@ -257,7 +243,6 @@ function run()
                     end
 
                     #calculate p(w)
-                    v = vs[i]
                     for k = 1:K
                         @inbounds prob +=
                             ((newcounts.wordtopiccounts[k,v] + β) /
@@ -274,16 +259,24 @@ function run()
                 prob /= R
                 totallogprob += log2(prob)
 
-                println(outf, "$d $i $prob")
+                println(OUT, "score($d,$i) = $prob # $(vocab[v])")
             end
 
             d += 1
         end
-        end
+        @debug showprogress("Testing document:", "$d DONE\n")
+
+        println(OUT)
+        println(OUT, "# Results:")
+        println(OUT, "total log probability = $totallogprob")
 
         ppl = 2^(-totallogprob / testlength)
-        println("\ntest perplexity: $ppl")
+
+        println(OUT, "perplexity = $ppl")
+        println(OUT, "normalized perplexity = $(ppl / vocab.size)")
     end
+
+    close(dumpfile)
 end
 
 run()
