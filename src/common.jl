@@ -221,18 +221,18 @@ function dirichlet_histogram!(observationcounts::Matrix{Int}, totals::Vector{Int
     dh
 end
 
-function dirichlet_histogram(observationcounts::Matrix{Int}, totals::Vector{Int})
-    (K, D) = size(observationcounts)
-    dirichlet_histogram!(observationcounts, totals, DirichletHistogram(K, D))
-end
-
+#
+# Optimize the concentration and base measure of an asymmetric Dirichlet prior
+#
 function dirichlet_estimate!(dh::DirichletHistogram, iters::Int, α::Vector{Float64})
     K = dh.K
+    converged = false
 
     for i = 1:iters
-        D = 0
-        S = 0
+        D = 0.
+        S = 0.
         α0 = sum(α)
+        maxstep = 0.
 
         for n = 1:dh.maxN
             D += 1 / (n - 1 + α0)
@@ -240,15 +240,63 @@ function dirichlet_estimate!(dh::DirichletHistogram, iters::Int, α::Vector{Floa
         end
 
         for k = 1:K
-            D = 0
-            Sk = 0
+            D = 0.
+            Sk = 0.
             for n = 1:dh.maxNk
                 @inbounds D += 1 / (n - 1 + α[k])
                 @inbounds Sk += dh[n,k]*D
             end
+
+            @inbounds prev = α[k]
             @inbounds α[k] *= Sk/S
+
+            @inbounds step = α[k] - prev
+            maxstep = max(maxstep, step)
+        end
+
+        converged = maxstep < 1e-9
+        if converged
+            break
         end
     end
 
-    α
+    (α, converged)
+end
+
+#
+# Optimize the concentration of a symmetric (uniform) Dirichlet prior
+#
+function dirichlet_estimate(dh::DirichletHistogram, iters::Int, β0::Float64)
+    K = dh.K
+    converged = false
+
+    for i = 1:iters
+        D = 0.
+        S = 0.
+        for n = 1:dh.maxN
+            D += 1 / (n - 1 + β0)
+            @inbounds S += dh[n]*D
+        end
+
+        β = β0/K
+        D = 0.
+        Snum = 0.
+        summed_counts = sum(dh.Nk, 2)
+        for n = 1:dh.maxNk
+            D += 1 / (n - 1 + β)
+            @inbounds Snum = summed_counts[n]*D
+        end
+
+        old = β0
+        # MALLET has `β` on the RHS here rather than `β0`, but it doesn't work for me (goes to 0 pretty quickly)
+        β0 = β0 * Snum / S
+
+        converged = β0 - old < 1e-9
+
+        if converged
+            break
+        end
+    end
+
+    (β0, converged)
 end

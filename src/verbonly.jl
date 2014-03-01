@@ -140,6 +140,7 @@ function run()
     # counts
     counts = Counts(zeros(Int, K, D), zeros(Int, K, V), zeros(Int, K))
     hist = DirichletHistogram()
+    betahist = DirichletHistogram()
 
     # random initialization
     @debug showprogress("Intializing:", 0, endof(data.vs))
@@ -159,7 +160,6 @@ function run()
     # do training
     for x = 1:iters
         @debug showprogress("Training:", x, iters)
-        # loglikelihood(K, D, V, data, counts, α, β)
 
         for d = 1:D
             ifirst = data.doffs[d]
@@ -169,11 +169,17 @@ function run()
             end
         end
 
+        # optimize priors
+        α_converged = true
+        β_converged = true
         if x > burnin && 0 == x % estimationinterval
             dirichlet_histogram!(counts.doctopiccounts, doctotals, hist)
-            dirichlet_estimate!(hist, prioriters, α)
+            (_, α_converged) = dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
             # TODO: estimate β prior?
+            dirichlet_histogram!(counts.wordtopiccounts', reshape(sum(counts.wordtopiccounts, 2), K), betahist)
+            (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
+            β = β0 / V
         end
 
         @debug if x % 10 == 0 || x == iters
@@ -186,6 +192,9 @@ function run()
                 println(dumpfile, "  $a")
             end
             println(dumpfile, "]")
+            if !α_converged println(dumpfile, "# α estimation did not converge!") end
+            println(dumpfile, "β = $β")
+            if !β_converged println(dumpfile, "# β estimation did not converge!") end
             println(dumpfile)
         end
     end
