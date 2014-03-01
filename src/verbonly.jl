@@ -291,7 +291,7 @@ function run()
             end
 
         end
-        @debug showprogress("Testing document:", "$d DONE.\n")
+        @debug showprogress("Testing document:", "$(d-1) DONE.\n")
 
         println(OUT)
         println(OUT, "# Results:")
