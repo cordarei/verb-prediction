@@ -303,7 +303,7 @@ function run()
         println(OUT, "normalized perplexity = $(ppl / vocab.size)")
     end
 
-    close(dumpfile)
+    @debug close(dumpfile)
 end
 
 run()
