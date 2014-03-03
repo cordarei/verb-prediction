@@ -20,7 +20,7 @@ class Path private (private val f: File) {
 
   def /(child: String): Path = Path(path, child)
 
-  def files: Seq[Path] = f.listFiles.filter(_.isFile).map{new Path(_)}.toSeq
+  def files: Seq[Path] = f.listFiles match {case null => Seq(); case x => x.filter(_.isFile).map{new Path(_)}.toSeq}
 
   def writer: Writer = new PrintWriter(new BufferedWriter(new FileWriter(f)))
   def reader: Reader = new BufferedReader(new FileReader(f))
