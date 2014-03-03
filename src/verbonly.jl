@@ -215,6 +215,7 @@ function run()
         for k = 1:K
             println(f, "$k\t$(α[k])\t$(topictotals[k])")
         end
+        println(f, "# β = $β")
     end
     @debug showprogress("Saving model", "... DONE.\n")
 
