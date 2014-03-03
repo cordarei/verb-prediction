@@ -120,6 +120,29 @@ function readvocab(filename::String)
 end
 
 
+# some missing utilities
+function indexof{T}(x::T, a::AbstractVector{T}, rng::Ranges)
+    for i in rng
+        if x == a[i]
+            return i
+        end
+    end
+    return 0
+end
+rfind{T}(x::T, a::AbstractVector{T}) = indexof(x, a, endof(a):-1:1)
+rfind{T}(x::T, a::AbstractVector{T}, start::Integer) = indexof(x, a, start:-1:1)
+
+function countin{T}(x::T, a::AbstractVector{T}, rng::Ranges)
+    count = 0
+    for i in rng
+        if x == a[i]
+            count += 1
+        end
+    end
+    count
+end
+
+
 # extra methods for StatsBase.WeightVector
 getindex(wv::WeightVec, i) = wv.values[i]
 start(wv::WeightVec) = start(wv.values)
