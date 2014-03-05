@@ -149,7 +149,7 @@ function run()
         ifirst = data.doffs[d]
         ilast = data.doffs[d+1] - 1
         for i = ifirst:ilast
-            @inbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts)
+            @myinbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts)
         end
         @debug if ilast > curnth * fld(endof(data.vs), 20) || ilast == endof(data.vs)
             curnth += 1
@@ -165,7 +165,7 @@ function run()
             ifirst = data.doffs[d]
             ilast = data.doffs[d+1] - 1
             for i = ifirst:ilast
-                @inbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts, data.fs[i])
+                @myinbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts, data.fs[i])
             end
         end
 
@@ -177,9 +177,9 @@ function run()
             (_, α_converged) = dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
             # TODO: estimate β prior?
-            dirichlet_histogram!(counts.wordtopiccounts', reshape(sum(counts.wordtopiccounts, 2), K), betahist)
-            (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
-            β = β0 / V
+            # dirichlet_histogram!(counts.wordtopiccounts', reshape(sum(counts.wordtopiccounts, 2), K), betahist)
+            # (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
+            # β = β0 / V
         end
 
         @debug if x % 10 == 0 || x == iters
@@ -268,19 +268,19 @@ function run()
                     newcounts = particlecounts[r]
                     #resample
                     for j = 1:i-1
-                        @inbounds fs[j,r] = sample_topic(K, V, vs[j], 1, α, β, newcounts, fs[j,r])
+                        @myinbounds fs[j,r] = sample_topic(K, V, vs[j], 1, α, β, newcounts, fs[j,r])
                     end
 
                     #calculate p(w)
                     for k = 1:K
-                        @inbounds prob +=
+                        @myinbounds prob +=
                             ((newcounts.wordtopiccounts[k,v] + β) /
                             (newcounts.topicwordtotals[k] + β*V)) *
                             ((newcounts.doctopiccounts[k] + α[k]) /
                             (i - 1 + α0))
                     end
 
-                    @inbounds fs[i,r] = sample_topic(K, V, v, 1, α, β, newcounts)
+                    @myinbounds fs[i,r] = sample_topic(K, V, v, 1, α, β, newcounts)
                 end
 
                 #TODO: find v w/ highest prob?

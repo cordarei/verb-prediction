@@ -177,9 +177,9 @@ function run()
             (_, α_converged) = dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
             # TODO: estimate β prior?
-            dirichlet_histogram!(counts.wordtopiccounts', reshape(sum(counts.wordtopiccounts, 2), K), betahist)
-            (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
-            β = β0 / V
+            # dirichlet_histogram!(counts.wordtopiccounts', reshape(sum(counts.wordtopiccounts, 2), K), betahist)
+            # (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
+            # β = β0 / V
         end
 
         @debug if x % 10 == 0 || x == iters

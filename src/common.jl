@@ -19,6 +19,37 @@ macro debug(ex)
     end
 end
 
+macro myinbounds(ex)
+    :(@inbounds $(esc(ex)))
+    # esc(ex)
+end
+
+macro showrec(ex)
+    if typeof(ex) == Expr
+        rec = Expr(:block)
+        for a in ex.args
+            push!(rec.args, :(@showrec $(esc(a))))
+        end
+        push!(rec.args, :(@show $(esc(ex))))
+        return rec
+    else
+        return :(@show $(esc(ex)))
+    end
+end
+
+macro checknan(ex)
+    # quote
+    #     x = $(esc(ex))
+    #     if isnan(x) || x == Inf
+    #         @showrec $(esc(ex))
+    #         @assert !isnan(x)
+    #     end
+    #     # @assert !isnan($(esc(ex)))
+    #     $(esc(ex))
+    # end
+    esc(ex)
+end
+
 function printover(io::IO, s)
     if !is(typeof(io), Base.TTY)
         return
@@ -233,12 +264,12 @@ function dirichlet_histogram!(observationcounts::Matrix{Int}, totals::Vector{Int
 
     for d = 1:D
         for k = 1:K
-            @inbounds n = observationcounts[k,d]
+            @myinbounds n = observationcounts[k,d]
             if n > 0
-                @inbounds dh[n,k] += 1
+                @myinbounds dh[n,k] += 1
             end
         end
-        @inbounds dh[totals[d]] += 1
+        @myinbounds dh[totals[d]] += 1
     end
 
     dh
@@ -254,26 +285,27 @@ function dirichlet_estimate!(dh::DirichletHistogram, iters::Int, α::Vector{Floa
     for i = 1:iters
         D = 0.
         S = 0.
-        α0 = sum(α)
+        α0 = @checknan sum(α)
         maxstep = 0.
 
         for n = 1:dh.maxN
-            D += 1 / (n - 1 + α0)
-            @inbounds S += dh[n]*D
+            D += @checknan 1 / (n - 1 + α0)
+            @myinbounds S += @checknan dh[n]*D
         end
 
         for k = 1:K
             D = 0.
             Sk = 0.
             for n = 1:dh.maxNk
-                @inbounds D += 1 / (n - 1 + α[k])
-                @inbounds Sk += dh[n,k]*D
+                @myinbounds D += @checknan 1 / (n - 1 + α[k])
+                @myinbounds Sk += @checknan dh[n,k]*D
             end
 
-            @inbounds prev = α[k]
-            @inbounds α[k] *= Sk/S
+            @myinbounds prev = α[k]
+            @myinbounds α[k] *= @checknan Sk/S
+            @myinbounds α[k] = max(α[k], eps()) #DFH
 
-            @inbounds step = α[k] - prev
+            @myinbounds step = α[k] - prev
             maxstep = max(maxstep, step)
         end
 
@@ -298,7 +330,7 @@ function dirichlet_estimate(dh::DirichletHistogram, iters::Int, β0::Float64)
         S = 0.
         for n = 1:dh.maxN
             D += 1 / (n - 1 + β0)
-            @inbounds S += dh[n]*D
+            @myinbounds S += dh[n]*D
         end
 
         β = β0/K
@@ -307,7 +339,7 @@ function dirichlet_estimate(dh::DirichletHistogram, iters::Int, β0::Float64)
         summed_counts = sum(dh.Nk, 2)
         for n = 1:dh.maxNk
             D += 1 / (n - 1 + β)
-            @inbounds Snum = summed_counts[n]*D
+            @myinbounds Snum = summed_counts[n]*D
         end
 
         old = β0

@@ -278,13 +278,13 @@ function run()
             (_, α_converged) = dirichlet_estimate!(hist, prioriters, α)
             α0 = sum(α)
             # TODO: estimate β prior?
-            dirichlet_histogram!(counts.verbtopiccounts', reshape(sum(counts.verbtopiccounts, 2), K), betahist)
-            (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
-            β = β0 / V
+            # dirichlet_histogram!(counts.verbtopiccounts', reshape(sum(counts.verbtopiccounts, 2), K), betahist)
+            # (β0, β_converged) = dirichlet_estimate(betahist, prioriters, β*V)
+            # β = β0 / V
             # estimate γ prior
-            dirichlet_histogram!(counts.argtopiccounts', reshape(sum(counts.argtopiccounts, 2), K), gammahist)
-            (Y0, Y_converged) = dirichlet_estimate(gammahist, prioriters, Y*A)
-            Y = Y0 / A
+            # dirichlet_histogram!(counts.argtopiccounts', reshape(sum(counts.argtopiccounts, 2), K), gammahist)
+            # (Y0, Y_converged) = dirichlet_estimate(gammahist, prioriters, Y*A)
+            # Y = Y0 / A
         end
 
         @debug if x % 10 == 0 || x == iters
