@@ -31,7 +31,7 @@ function readtrain(filename::String)
             ss = split(line)
             if ss[1] == "document"
                 dlen = int(ss[2])
-                adlen = int(ss[2])
+                adlen = int(ss[3])
                 numverbs += dlen
                 numargs += adlen
                 push!(doffs, numverbs + 1)
@@ -52,7 +52,7 @@ function readtrain(filename::String)
         while !eof(f)
             line = chomp(readline(f))
             ss = split(line)
-            @assert ss[1] = "document"
+            @assert ss[1] == "document"
             n = int(ss[2])
             m = int(ss[3])
             # first the verbs
@@ -151,8 +151,8 @@ function sample_topic(K, V, A, v, as, d, α, β, Y, counts::Counts, dec_k=0)
     counts.verbtopiccounts[k,v] += 1
     counts.topicverbtotals[k] += 1
     for a in as
-        counts.argtopiccounts[dec_k,a] += 1
-        counts.topicargtotals[dec_k] += 1
+        counts.argtopiccounts[k,a] += 1
+        counts.topicargtotals[k] += 1
     end
 
     k
@@ -242,9 +242,9 @@ function run()
         afirst = data.adoffs[d]
         alast = data.adoffs[d+1] - 1
         for i = ifirst:ilast
-            rng = findrange(data, i, afirst:alast)
+            rng = findrange(data.afs, i, afirst:alast)
             afirst = last(rng) + 1
-            @inbounds data.fs[i] = sample_topic(K, V, A, data.vs[i], sub(data.as, rng), d, α, β, Y, counts)
+            @myinbounds data.fs[i] = sample_topic(K, V, A, data.vs[i], sub(data.as, rng), d, α, β, Y, counts)
         end
 
         @debug if ilast > curnth * fld(endof(data.vs), 20) || ilast == endof(data.vs)
@@ -263,9 +263,9 @@ function run()
             afirst = data.adoffs[d]
             alast = data.adoffs[d+1] - 1
             for i = ifirst:ilast
-                rng = findrange(data, i, afirst:alast)
+                rng = findrange(data.afs, i, afirst:alast)
                 afirst = last(rng) + 1
-                @inbounds data.fs[i] = sample_topic(K, V, A, data.vs[i], sub(data.as, rng), d, α, β, Y, counts, data.fs[i])
+                @myinbounds data.fs[i] = sample_topic(K, V, A, data.vs[i], sub(data.as, rng), d, α, β, Y, counts, data.fs[i])
             end
         end
 
@@ -394,9 +394,10 @@ function run()
             for i = 1:n_d
                 prob = 0.
                 v = vs[i]
+                n = vn[i]
 
                 rng = findrange(afs, i, 1:nargs)
-                while an[last(rng)] > vn[i]
+                while length(rng) > 0 && an[last(rng)] > n
                     rng = first(rng):last(rng)-1
                 end
                 verbargs = sub(as, rng)
@@ -407,17 +408,17 @@ function run()
                     afirst = 1
                     for j = 1:i-1
                         rng = findrange(afs, i, afirst:nargs)
-                        while an[last(rng)] > vn[i]
+                        while length(rng) > 0 && an[last(rng)] > n
                             rng = first(rng):last(rng)-1
                         end
                         afirst = last(rng) + 1
-                        @inbounds fs[j,r] = sample_topic(K, V, A, vs[j], sub(as, rng), 1, α, β, Y, newcounts, fs[j,r])
+                        @myinbounds fs[j,r] = sample_topic(K, V, A, vs[j], sub(as, rng), 1, α, β, Y, newcounts, fs[j,r])
                     end
 
                     #calculate p(w)
                     for k = 1:K
                         y = argterm(A, k, verbargs, Y, counts)
-                        @inbounds prob +=
+                        @myinbounds prob +=
                             ((newcounts.verbtopiccounts[k,v] + β) /
                             (newcounts.topicverbtotals[k] + β*V)) *
                             ((newcounts.doctopiccounts[k] + α[k]) /
