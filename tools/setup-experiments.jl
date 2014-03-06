@@ -4,12 +4,15 @@ work_dir = ENV["VWORK"]
 src_dir = ENV["VSRC"]
 corpus_dir = ENV["CORPUS_ROOT"]
 experiments_dir = ENV["EXPERIMENTS_ROOT"]
+julia = ENV["JULIA"]
 
-corpora = ["02-main.dev"]
+# corpora = ["02-main.dev"]
+corpora = ["01-indomain", "03-main.test"]
 # corpora = ["01-indomain", "02-main.dev", "03-main.test"]
 verbs = ["root", "recursive"]
 # verbs = ["all", "root", "recursive"]
-topics = [50, 100, 500, 1000, 2000]
+topics = ["XX"]
+# topics = [50, 100, 500, 1000, 2000]
 models = ["lda", "verbonly", "verbargs", "verbchain"]
 
 # make sure we are not overwriting anything
@@ -35,7 +38,7 @@ function makerunner(dir, model, numtopics)
     dbg = "DEBUG=1 " # dbg = ""
     script = "$(src_dir)/$(model).jl"
     opts = "-K $(numtopics) -a 20 -b 0.001 -i 2000 --burnin 0 --priorinterval 5 -R 100"
-    cmd = "$(dbg)julia -p 1 $script $opts 2>&1 | tee log >/dev/null"
+    cmd = "$(dbg)$(julia) $script $opts 2>&1 | tee log >/dev/null"
 
 """#!/bin/bash
 
