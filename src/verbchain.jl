@@ -4,41 +4,58 @@ include("common.jl")
 type TrainingData
     fs::Vector{Int}
     vs::Vector{Int}
-    doffs::Vector{Int}
+    vfs::Vector{Int} # indexes into fs
+    doffs::Vector{Int} # document offsets into fs
+    vdoffs::Vector{Int} # document offsets into vs
 end
 
 function readtrain(filename::String)
-    numtokens = 0
+    numvars = 0
+    numverbs = 0
     doffs = [1]
+    vdoffs = [1]
     #do one pass to count everything
     open(filename) do f
         for line in eachline(f)
             ss = split(line)
             if ss[1] == "document"
                 dlen = int(ss[2])
-                numtokens += dlen
-                push!(doffs, numtokens + 1)
+                vdlen = int(ss[3])
+                numvars += dlen
+                numverbs += vdlen
+                push!(doffs, numvars + 1)
+                push!(vdoffs, numverbs + 1)
             end
         end
     end
 
     # allocate storage and read in data
-    fs = Array(Int, numtokens)
-    vs = Array(Int, numtokens)
+    fs = Array(Int, numvars)
+    vs = Array(Int, numverbs)
+    vfs = Array(Int, numverbs)
     i = 1
+    d = 1
     open(filename) do f
-        for line in eachline(f)
+        while !eof(f)
+            line = chomp(readline(f))
             ss = split(line)
-            if ss[1] != "document"
+            @assert ss[1] == "document"
+            n = int(ss[2])
+            m = int(ss[3])
+            for x = 1:m
+                line = chomp(readline(f))
+                ss = split(line)
                 vs[i] = int(ss[1])
+                vfs[i] = int(ss[3]) + doffs[d] - 1
                 i += 1
             end
+            d += 1
         end
     end
-    @assert(i == doffs[end])
-    @assert(i == numtokens + 1)
+    @assert(i == vdoffs[end])
+    @assert(i == numverbs + 1)
 
-    return TrainingData(fs, vs, doffs)
+    return TrainingData(fs, vs, vfs, doffs, vdoffs)
 end
 
 
@@ -49,30 +66,45 @@ type Counts
 end
 
 const samplebuffer = Array(Float64, 0)
-function sample_topic(K, V, v, d, α, β, counts::Counts, dec_k=0)
+function sample_topic(K, V, vs, d, α, β, counts::Counts, dec_k=0)
     if length(samplebuffer) != K
         resize!(samplebuffer, K)
     end
 
     if dec_k > 0
         counts.doctopiccounts[dec_k,d] -= 1
-        counts.wordtopiccounts[dec_k,v] -= 1
-        counts.topicwordtotals[dec_k] -= 1
+        for v in vs
+            counts.wordtopiccounts[dec_k,v] -= 1
+            counts.topicwordtotals[dec_k] -= 1
+        end
     end
 
     ks = samplebuffer
     for k = 1:K
-        ks[k] =
-            (counts.doctopiccounts[k,d] + α[k]) *
-            (counts.wordtopiccounts[k,v] + β) /
-            (counts.topicwordtotals[k] + V*β)
+        wordfactor = 1.
+        base = β*V + counts.topicwordtotals[k]
+        for i = 1:length(vs)
+            wordfactor *= 1 / (base + i - 1)
+            v = vs[i]
+            if rfind(v, vs) == i
+                base2 = β + counts.wordtopiccounts[k,v]
+                for j = 1:countin(v, vs, 1:i)
+                    wordfactor *= (base2 + j - 1)
+                end
+            end
+        end
+        ks[k] = (counts.doctopiccounts[k,d] + α[k]) * wordfactor
+            # (counts.wordtopiccounts[k,v] + β) /
+            # (counts.topicwordtotals[k] + V*β)
     end
 
     k = sample(weights(ks))::Int
 
     counts.doctopiccounts[k,d] += 1
-    counts.wordtopiccounts[k,v] += 1
-    counts.topicwordtotals[k] += 1
+    for v in vs
+        counts.wordtopiccounts[k,v] += 1
+        counts.topicwordtotals[k] += 1
+    end
 
     k
 end
@@ -143,18 +175,29 @@ function run()
     betahist = DirichletHistogram()
 
     # random initialization
-    @debug showprogress("Intializing:", 0, endof(data.vs))
+    @debug showprogress("Intializing:", 0, endof(data.fs))
     @debug curnth = 0
     for d = 1:D
         ifirst = data.doffs[d]
         ilast = data.doffs[d+1] - 1
+        vfirst = data.vdoffs[d]
+        vlast = data.vdoffs[d+1] - 1
         for i = ifirst:ilast
-            @myinbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts)
+            rng = findrange(data.vfs, i, vfirst:vlast)
+            vfirst = last(rng) + 1
+            @myinbounds data.fs[i] = sample_topic(K, V, sub(data.vs, rng), d, α, β, counts)
         end
-        @debug if ilast > curnth * fld(endof(data.vs), 20) || ilast == endof(data.vs)
+        @debug if ilast > curnth * fld(endof(data.fs), 20) || ilast == endof(data.fs)
             curnth += 1
-            showprogress("Intializing:", ilast, endof(data.vs))
+            showprogress("Intializing:", ilast, endof(data.fs))
         end
+    end
+
+    @debug begin
+        @assert sum(counts.doctopiccounts) == data.doffs[end] - 1
+        @assert sum(counts.wordtopiccounts) == data.vdoffs[end] - 1
+        @assert reshape(sum(counts.doctopiccounts, 1), D) == (data.doffs[2:end] .- data.doffs[1:end-1])
+        @assert reshape(sum(counts.wordtopiccounts, 2), K) == counts.topicwordtotals
     end
 
     # do training
@@ -164,8 +207,13 @@ function run()
         for d = 1:D
             ifirst = data.doffs[d]
             ilast = data.doffs[d+1] - 1
+            vfirst = data.vdoffs[d]
+            vlast = data.vdoffs[d+1] - 1
             for i = ifirst:ilast
-                @myinbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts, data.fs[i])
+                rng = findrange(data.vfs, i, vfirst:vlast)
+                vfirst = last(rng) + 1
+                @myinbounds data.fs[i] = sample_topic(K, V, sub(data.vs, rng), d, α, β, counts, data.fs[i])
+                # @myinbounds data.fs[i] = sample_topic(K, V, data.vs[i], d, α, β, counts, data.fs[i])
             end
         end
 
@@ -210,8 +258,13 @@ function run()
     @debug showprogress("Saving model", "..")
     open("model", "w") do f
         println(f, "# Topic α Nk")
-        topictotals = sum(counts.wordtopiccounts, 2)
-        @debug assert(topictotals == sum(counts.doctopiccounts, 2))
+        topictotals = reshape(sum(counts.wordtopiccounts, 2), K)
+        @debug begin
+            @assert sum(counts.doctopiccounts) == data.doffs[end] - 1
+            @assert sum(counts.wordtopiccounts) == data.vdoffs[end] - 1
+            @assert reshape(sum(counts.doctopiccounts, 1), D) == (data.doffs[2:end] .- data.doffs[1:end-1])
+            @assert topictotals == counts.topicwordtotals
+        end
         for k = 1:K
             println(f, "$k\t$(α[k])\t$(topictotals[k])")
         end
@@ -239,6 +292,8 @@ function run()
             copy(counts.topicwordtotals))
         for r=1:R
     ]
+    vbuf = Array(Int, 0) # allocate a buffer for collecting verbs sharing common frame variable for sampling
+    vbufend = 0
 
     open("test") do f
         while !eof(f)
@@ -248,28 +303,68 @@ function run()
 
             n_d = int(ss[2])
             fs = Array(Int, n_d, R)
-            vs = Array(Int, n_d)
+            @debug fill!(fs, 0)
+            nverbs = int(ss[3])
+            vs = Array(Int, nverbs)
+            vfs = Array(Int, nverbs)
+            vns = Array(Int, nverbs)
 
-            testlength += n_d
+            testlength += nverbs
+            # cheat and just allocate the max size needed
+            if length(vbuf) < nverbs
+                resize!(vbuf, nverbs)
+            end
 
             @debug showprogress("Testing document:", d)
 
-            for i = 1:n_d
+            for i = 1:nverbs
                 line = chomp(readline(f))
-                vs[i] = int(line)
+                ss = split(line)
+                vs[i] = int(ss[1])
+                vns[i] = int(ss[2])
+                vfs[i] = int(ss[3])
             end
 
+            # sort by token index (we want to evaluate verbs in LR order)
+            idxs = [1:nverbs]
+            sort!(idxs, by= i -> vns[i])
+            vs[:] = vs[idxs]
+            vfs[:] = vfs[idxs]
+            vns[:] = vns[idxs]
+
             # do L2R approx.
-            for i = 1:n_d
+            for i = 1:nverbs
                 prob = 0.
                 v = vs[i]
+                fi = vfs[i]
 
                 for r = 1:R
                     newcounts = particlecounts[r]
                     #resample
-                    for j = 1:i-1
-                        @myinbounds fs[j,r] = sample_topic(K, V, vs[j], 1, α, β, newcounts, fs[j,r])
+                    for j = 1:n_d
+                        vbufend = 0
+                        for x = 1:i-1
+                            if vfs[x] == j
+                                vbufend += 1
+                                vbuf[vbufend] = vs[x]
+                            end
+                        end
+                        if vbufend > 0
+                            @myinbounds fs[j,r] = sample_topic(K, V, sub(vbuf, 1:vbufend), 1, α, β, newcounts, fs[j,r])
+                        end
                     end
+                end
+
+                vbufend = 0
+                for x = 1:i # include vs[i]
+                    if vfs[x] == fi
+                        vbufend += 1
+                        vbuf[vbufend] = vs[x]
+                    end
+                end
+
+                for r = 1:R
+                    newcounts = particlecounts[r]
 
                     #calculate p(w)
                     for k = 1:K
@@ -280,7 +375,13 @@ function run()
                             (i - 1 + α0))
                     end
 
-                    @myinbounds fs[i,r] = sample_topic(K, V, v, 1, α, β, newcounts)
+                    if vbufend > 1
+                        # correct for double-counted verbs in `vbuf[1:end-1]`:
+                        #   add 1 count for new verb, then decrement as normal
+                        newcounts.wordtopiccounts[fs[fi,r],v] += 1
+                        newcounts.topicwordtotals[fs[fi,r]] += 1
+                    end
+                    @myinbounds fs[fi,r] = sample_topic(K, V, sub(vbuf, 1:vbufend), 1, α, β, newcounts, fs[fi,r])
                 end
 
                 #TODO: find v w/ highest prob?

@@ -163,6 +163,16 @@ end
 rfind{T}(x::T, a::AbstractVector{T}) = indexof(x, a, endof(a):-1:1)
 rfind{T}(x::T, a::AbstractVector{T}, start::Integer) = indexof(x, a, start:-1:1)
 
+function findrange(a, i, rng::Ranges)
+    fst = indexof(i, a, rng)
+    if fst == 0
+        return first(rng):first(rng)-1 # return empty range beginning at `first(rng)`
+    else
+        lst = indexof(i, a, reverse(rng))
+        return fst:lst
+    end
+end
+
 function countin{T}(x::T, a::AbstractVector{T}, rng::Ranges)
     count = 0
     for i in rng

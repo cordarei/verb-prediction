@@ -4,20 +4,10 @@ include("common.jl")
 type TrainingData
     fs::Vector{Int}
     vs::Vector{Int}
-    doffs::Vector{Int}
+    doffs::Vector{Int} # document offset into fs (and vs)
     as::Vector{Int}
-    afs::Vector{Int}
-    adoffs::Vector{Int}
-end
-
-function findrange(afs, i, rng::Ranges)
-    fst = indexof(i, afs, rng)
-    if fst == 0
-        return first(rng):first(rng)-1 # return empty range beginning at `first(rng)`
-    else
-        lst = indexof(i, afs, reverse(rng))
-        return fst:lst
-    end
+    afs::Vector{Int} # index into fs (and vs)
+    adoffs::Vector{Int} # document offset into as
 end
 
 function readtrain(filename::String)
@@ -48,6 +38,7 @@ function readtrain(filename::String)
 
     i = 1
     j = 1
+    d = 1
     open(filename) do f
         while !eof(f)
             line = chomp(readline(f))
@@ -67,15 +58,17 @@ function readtrain(filename::String)
                 line = chomp(readline(f))
                 ss = split(line)
                 as[j] = int(ss[1])
-                afs[j] = int(ss[2])
+                afs[j] = int(ss[3]) + doffs[d] - 1
                 j += 1
             end
+            d += 1
         end
     end
     @assert(i == doffs[end])
     @assert(i == numverbs + 1)
     @assert(j == adoffs[end])
     @assert(j == numargs + 1)
+    @assert d == endof(doffs) == endof(adoffs)
 
     return TrainingData(fs, vs, doffs, as, afs, adoffs)
 end
@@ -94,7 +87,7 @@ function argterm(A, k, as, Y, counts::Counts)
     y = 1.
     base = Y*A + counts.topicargtotals[k]
     for i = 1:length(as)
-        y *= (base + i - 1)
+        y *= 1 / (base + i - 1)
         a = as[i]
         if rfind(a, as) == i
             base2 = Y + counts.argtopiccounts[k,a]
@@ -128,7 +121,7 @@ function sample_topic(K, V, A, v, as, d, α, β, Y, counts::Counts, dec_k=0)
         y = 1.
         base = Y*A + counts.topicargtotals[k]
         for i = 1:length(as)
-            y *= (base + i - 1)
+            y *= 1 / (base + i - 1)
             a = as[i]
             if rfind(a, as) == i
                 base2 = Y + counts.argtopiccounts[k,a]
@@ -163,6 +156,7 @@ function loglikelihood(K, D, V, A, data::TrainingData, counts::Counts, α, β, Y
     l = 0.
     l += D * (lgamma(α0) - sum(lgamma, α))
     l += K * (lgamma(V * β) - V * lgamma(β))
+    l += K * (lgamma(A * Y) - A * lgamma(Y))
 
     for d=1:D
         l -= lgamma(data.doffs[d+1] - data.doffs[d] + α0)
@@ -326,9 +320,15 @@ function run()
     open("model", "w") do f
         println(f, "# Topic α Nk")
         topictotals = sum(counts.verbtopiccounts, 2)
-        @debug assert(topictotals == sum(counts.doctopiccounts, 2))
+        @debug begin
+            @assert topictotals == sum(counts.doctopiccounts, 2)
+            @show sum(counts.topicargtotals)
+            @show sum(counts.argtopiccounts)
+            @show data.adoffs[end] - 1
+            @assert sum(counts.topicargtotals) == sum(counts.argtopiccounts) == data.adoffs[end] - 1
+        end
         for k = 1:K
-            println(f, "$k\t$(α[k])\t$(topictotals[k])")
+            println(f, "$k\t$(α[k])\t$(topictotals[k])\t$(counts.topicargtotals[k])")
         end
         println(f, "# β = $β")
         println(f, "# γ = $Y")
@@ -407,7 +407,7 @@ function run()
                     #resample
                     afirst = 1
                     for j = 1:i-1
-                        rng = findrange(afs, i, afirst:nargs)
+                        rng = findrange(afs, j, afirst:nargs)
                         while length(rng) > 0 && an[last(rng)] > n
                             rng = first(rng):last(rng)-1
                         end
@@ -417,13 +417,14 @@ function run()
 
                     #calculate p(w)
                     for k = 1:K
-                        y = argterm(A, k, verbargs, Y, counts)
+                        # y = argterm(A, k, verbargs, Y, counts)
                         @myinbounds prob +=
                             ((newcounts.verbtopiccounts[k,v] + β) /
                             (newcounts.topicverbtotals[k] + β*V)) *
                             ((newcounts.doctopiccounts[k] + α[k]) /
-                            (i - 1 + α0)) *
-                            y
+                            (i - 1 + α0))
+                            # (i - 1 + α0)) *
+                            # y
                     end
 
                     @inbounds fs[i,r] = sample_topic(K, V, A, v, verbargs, 1, α, β, Y, newcounts)
