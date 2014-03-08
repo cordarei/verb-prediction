@@ -306,6 +306,7 @@ function run()
         println(OUT)
         println(OUT, "# Results:")
         println(OUT, "total log probability = $totallogprob")
+        println(OUT, "test length = $testlength")
 
         ppl = 2^(-totallogprob / testlength)
 

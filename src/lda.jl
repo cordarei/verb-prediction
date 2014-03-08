@@ -251,7 +251,7 @@ function run()
             vs = Array(Int, n_d)
             bs = falses(n_d)
 
-            testlength += n_d
+            # testlength += n_d
 
             @debug showprogress("Testing document:", d)
 
@@ -292,6 +292,7 @@ function run()
                 end
 
                 if isverb
+                    testlength += 1
                     #TODO: find v w/ highest prob?
 
                     prob /= R
@@ -316,6 +317,7 @@ function run()
         println(OUT)
         println(OUT, "# Results:")
         println(OUT, "total log probability = $totallogprob")
+        println(OUT, "test length = $testlength")
 
         ppl = 2^(-totallogprob / testlength)
 
