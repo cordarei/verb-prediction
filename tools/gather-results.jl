@@ -1,5 +1,8 @@
 #!/usr/bin/env julia
 
+using DataArrays
+using DataFrames
+
 const corpora = ["01-indomain", "02-main.dev", "03-main.test"]
 const verbs = ["all", "recursive", "root"]
 const models = ["lda", "verbonly", "verbargs", "verbchain"]
@@ -15,6 +18,7 @@ end
 findindex(x, coll) = findindex(y -> y == x, coll)
 
 logs = split(readchomp(`find $(pwd()) -name log`))
+logs = filter(x -> success(`grep -q perplexity $x`), logs)
 
 type Params
     corpus::String
@@ -45,6 +49,32 @@ function path2keys(path)
         ("topics", parts[idx+3]),
         ("run", parts[idx+4])
     ])
+end
+
+function path2df(path)
+    parts = split(path, "/")
+    idx = findindex(x -> x in corpora, parts)
+    @assert idx > 0
+    df = DataFrame()
+    df[:corpus] = parts[idx]
+    df[:verbs] = parts[idx + 1]
+    df[:model] = parts[idx + 2]
+    df[:topics] = int(parts[idx + 3])
+    df[:run] = int(parts[idx + 4][4:end])
+    df[:perplexity] = NA
+    df[:normalized_perplexity] = NA
+    open(convert(ASCIIString, path)) do f
+        for line in eachline(f)
+            line = chomp(line)
+            ss = split(line, " = ")
+            if ss[1] == "perplexity"
+                df[:perplexity] = float(ss[2])
+            elseif ss[1] == "normalized perplexity"
+                df[:normalized_perplexity] = float(ss[2])
+            end
+        end
+    end
+    return df
 end
 
 function readresults(path)
@@ -93,11 +123,13 @@ function maketablemat(results, normalized=false)
     out
 end
 
-function doit()
-    results = map(path2results, logs)
-    println("# Perplexity:")
-    print(maketablemat(results))
-    println()
-    println("# Normalized:")
-    print(maketablemat(results, true))
+function doit(filename)
+    # results = map(path2results, logs)
+    # println("# Perplexity:")
+    # print(maketablemat(results))
+    # println()
+    # println("# Normalized:")
+    # print(maketablemat(results, true))
+    results = vcat(map(path2df, logs))
+    writetable(filename, results)
 end
