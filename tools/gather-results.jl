@@ -88,7 +88,7 @@ function doit(filename)
         results[c][:] = results[c][idxs]
     end
 
-    results = results[[:corpus, :verbs, :model, :topics, :perplexity, :zerotopics, :average_perplexity, :var_ppl, :dev_ppl]]
+    results = results[[:corpus, :verbs, :model, :topics, :run, :perplexity, :zerotopics, :average_perplexity, :var_ppl, :dev_ppl]]
 
     writetable(filename, results)
 end
