@@ -59,5 +59,8 @@ this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 ### JAR files
 
 `agiga-1.2.jar` and `vtd-xml-2.10.jar` are included from the Annotated
-English Gigaword Java API (https://code.google.com/p/agiga/). Both
-files are licensed under the GNU GPL.
+English Gigaword Java API. Both files are licensed under the GNU GPL,
+and the source code can be found here:
+
+- https://github.com/mgormley/agiga
+- http://vtd-xml.sourceforge.net/
