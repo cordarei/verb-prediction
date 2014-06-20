@@ -44,7 +44,8 @@ bash.
 
 ## Permissions
 
-All files written by Joseph Irwin.
+All source code and documentation in this repository, including this
+file, was written by Joseph Irwin. No rights reserved.
 
 [![CC0](http://i.creativecommons.org/p/zero/1.0/88x31.png)](http://creativecommons.org/publicdomain/zero/1.0/)
 
